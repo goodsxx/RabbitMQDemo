@@ -10,37 +10,46 @@ ConnectionFactory factory = new()
     UserName = "guest",
     Password = "guest"
 };
-using var connection = factory.CreateConnection();
-using var channel = connection.CreateModel();
+using var connection = factory.CreateConnection(); // 创建连接
+using var channel = connection.CreateModel(); // 创建通道
 
-// 声明一个队列，如果不存在则创建
-var queueName = "task_queue";
-channel.QueueDeclare(queue: queueName, durable: true, exclusive: false, autoDelete: false, arguments: null);
+// 声明队列，如果该队列不存在，则会自动创建
+channel.QueueDeclare(queue: "work_queue",
+                     durable: true, // 设置队列为持久化
+                     exclusive: false,
+                     autoDelete: false,
+                     arguments: null);
 
-// 设置每个消费者最多只能处理一条消息，避免某些消费者被过度负载而导致其他消费者处于空闲状态
-channel.BasicQos(0, 1, false);
+Random random = new();
 
-Console.WriteLine(" [消费者1] 等待消息.");
+var totalTimes = 0;//总耗时
+var num = 0;//处理消息数
 
-// 创建一个工作者队列，每个消息都会被多个工作者中的一个处理
+// 创建一个事件基本消费者
 var consumer = new EventingBasicConsumer(channel);
-consumer.Received += (model, ea) =>
+consumer.Received += async (model, ea) =>
 {
-    var body = ea.Body.ToArray();
-    var message = Encoding.UTF8.GetString(body);
-    Console.WriteLine(" [消费者1] 接收： {0}", message);
+    ReadOnlyMemory<byte> body = ea.Body.ToArray();
+    string message = Encoding.UTF8.GetString(body.Span);
+    Console.WriteLine($"[消费者1] 收到消息：{message}");
 
-    int dots = message.Split('.').Length - 1;
-    System.Threading.Thread.Sleep(dots * 1000); // 模拟任务处理时间
+    // 模拟耗时的任务处理
+    var time = random.Next(0, 5000);
+    await Task.Delay(time);
 
-    Console.WriteLine(" [消费者1] 完成");
+    Console.WriteLine($"[消费者1] 完成: 耗时{time}ms");
 
-    // 手动确认消息已经处理完成
+    // 当消费者完成任务后，手动确认消息已经被消费
     channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
+
+    totalTimes += time;
+    num += 1;
+
+    Console.WriteLine($"[消费者1] 目前处理{num}条消息，共耗时{totalTimes}ms");
 };
-
-// 订阅队列并开始消费消息
-channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
-
-Console.WriteLine(" 按 [enter] 键退出");
+// 启动消费者
+channel.BasicConsume(queue: "work_queue",
+                     autoAck: false, // 关闭自动确认消息消费
+                     consumer: consumer); // 指定消费者
+Console.WriteLine("按[Enter]键退出");
 Console.ReadLine();

@@ -10,27 +10,34 @@ ConnectionFactory factory = new()
     UserName = "guest",
     Password = "guest"
 };
+using var connection = factory.CreateConnection(); // 创建连接
+using var channel = connection.CreateModel(); // 创建通道
 
-// 创建连接对象
-using var connection = factory.CreateConnection();
-    // 创建信道对象
-using var channel = connection.CreateModel();
-// 声明队列，如果不存在就创建
-channel.QueueDeclare(queue: "hello", durable: false, exclusive: false, autoDelete: false, arguments: null);
+// 声明队列，如果该队列不存在，则会自动创建
+channel.QueueDeclare(queue: "hello",
+                     durable: false,
+                     exclusive: false,
+                     autoDelete: false,
+                     arguments: null);
 
-// 创建消费者对象
+// 创建一个事件基本消费者
 var consumer = new EventingBasicConsumer(channel);
-
-// 消息接收事件处理
 consumer.Received += (model, ea) =>
 {
-    byte[] body = ea.Body.ToArray();             // 获取消息体
-    string message = Encoding.UTF8.GetString(body);   // 将消息体转换成字符串
-    Console.WriteLine(" [消费者] 接收： {0}", message);
+    ReadOnlyMemory<byte> body = ea.Body.ToArray(); // 获取消息体的字节数组
+    string message = Encoding.UTF8.GetString(body.Span); // 将字节数组转换成字符串
+    Console.WriteLine("[消费者] 收到消息：{0}", message); // 输出接收到的消息
+    
+    //成功时手动确认消息
+    channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
+    //失败时打回队列
+    //channel.BasicNack(deliveryTag: ea.DeliveryTag, multiple: false, requeue: true);
 };
 
-// 订阅队列并开始消费消息
-channel.BasicConsume(queue: "hello", autoAck: true, consumer: consumer);
+// 启动消费者
+channel.BasicConsume(queue: "hello",
+                     autoAck: false, // 是否自动确认消息已经被消费
+                     consumer: consumer); // 指定消费者
 
-Console.WriteLine("按 [enter] 键退出");
-Console.ReadLine();
+Console.WriteLine("按任意键退出");
+Console.ReadLine(); 

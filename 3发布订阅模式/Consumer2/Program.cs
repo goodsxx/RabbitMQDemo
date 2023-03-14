@@ -10,34 +10,45 @@ ConnectionFactory factory = new()
     UserName = "guest",
     Password = "guest"
 };
+// 创建连接和通道
 using var connection = factory.CreateConnection();
 using var channel = connection.CreateModel();
 
-var exchangeName = "logs"; // 定义交换机名称
+// 声明交换机，指定交换机类型为 fanout
+channel.ExchangeDeclare(
+    exchange: "logs",
+    type: ExchangeType.Fanout);
 
-// 声明一个 fanout 类型的交换机，用于广播消息
-channel.ExchangeDeclare(exchange: exchangeName, type: ExchangeType.Fanout);
-
-// 创建一个临时队列，并绑定到指定的交换机上
+// 声明队列，让系统随机生成队列名
+// 当我们不向 QueueDeclare（） 提供任何参数时，我们会创建一个具有生成名称的非持久、独占、自动删除队列：
 var queueName = channel.QueueDeclare().QueueName;
-channel.QueueBind(queue: queueName, exchange: exchangeName, routingKey: "");
 
-Console.WriteLine("[消费者2] 等待队列.");
+// 将队列绑定到交换机
+channel.QueueBind(
+    queue: queueName,  // 队列名称
+    exchange: "logs",  // 交换机名称
+    routingKey: "");   // 发送到 fanout 类型的交换机时，routingKey 不起作用，可以设置为空字符串
 
-// 构造一个消费者对象，并设置 Received 事件回调函数
+Console.WriteLine(" [消费者2] 等待消息中...");
+
+// 创建事件消费者，用于处理接收到的消息
 var consumer = new EventingBasicConsumer(channel);
+
+// 处理接收到的消息
 consumer.Received += (model, ea) =>
 {
-    var message = Encoding.UTF8.GetString(ea.Body.ToArray());
-    Console.WriteLine($"[消费者2] Received '{message}'");
-    //成功时手动确认消息
-    channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
-    //失败时打回队列
-    //channel.BasicNack(deliveryTag: ea.DeliveryTag, multiple: false, requeue: true);
+    ReadOnlyMemory<byte> body = ea.Body.ToArray();
+    string message = Encoding.UTF8.GetString(body.Span);
+    Console.WriteLine(" [消费者2] 收到消息：{0}", message);
 };
 
-// 启动消费者，并指定要消费的队列
-channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
+// 订阅队列
+channel.BasicConsume(
+    queue: queueName,  // 队列名称
+    autoAck: true,     // 是否自动发送确认消息
+    consumer: consumer);
 
-Console.WriteLine("按 [enter] 键退出");
+Console.WriteLine("按[Enter]键退出");
 Console.ReadLine();
+
+

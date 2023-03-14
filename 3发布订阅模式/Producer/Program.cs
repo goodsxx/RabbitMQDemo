@@ -10,33 +10,30 @@ ConnectionFactory factory = new()
     Password = "guest"
 };
 
-// 创建连接对象
+// 创建连接和通道
 using var connection = factory.CreateConnection();
-// 创建信道对象
 using var channel = connection.CreateModel();
-    
-var exchangeName = "logs"; // 定义交换机名称
-// 声明一个 fanout 类型的交换机，用于广播消息
-channel.ExchangeDeclare(exchange: exchangeName, type: ExchangeType.Fanout);
 
-string[] messages = new string[]
+// 声明交换机，指定交换机类型为 fanout
+channel.ExchangeDeclare(
+    exchange: "logs",
+    type: ExchangeType.Fanout);
+
+// 发送消息到交换机
+for (int i = 0; i < 10; i++)
 {
-    "Hello", "World", "Welcome", "to", "RabbitMQ"
-};
+    string message = $"Log 消息 {i}";
+    byte[] body = Encoding.UTF8.GetBytes(message);
 
-// 向队列中发送多个消息，并设置消息持久化
-foreach (var message in messages)
-{
-    var body = Encoding.UTF8.GetBytes(message); // 将消息内容转换成字节数组
-    var properties = channel.CreateBasicProperties();
-    properties.Persistent = true; // 设置消息持久化
+    channel.BasicPublish(
+        exchange: "logs", // 指定交换机名称
+        routingKey: string.Empty, // 发送到 fanout 类型的交换机时，routingKey 不起作用，可以设置为空字符串
+        basicProperties: null,
+        body: body);
 
-    // 发布消息到交换机中
-    channel.BasicPublish(exchange: exchangeName, routingKey: "", basicProperties: null, body: body);
-
-    Console.WriteLine(" [生产者] 发送： {0}", message);
+    Console.WriteLine(" [生产者] 发送消息：{0}", message);
 }
 
-Console.WriteLine(" 按 [enter] 键退出");
+Console.WriteLine("按[Enter]键退出");
 Console.ReadLine();
 
